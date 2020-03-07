@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         coursera.com 字幕翻译
 // @description  coursera.com 字幕翻译脚本，并支持下载视频和字幕文件
-// @namespace    https://github.com/journey-ad
-// @version      0.3.5
+// @namespace    https://github.com/coursera-translate-cn
+// @version      0.0.1
 // @icon         https://cdn.coursera.com/static/favicon.ico
 // @author       DrMerxer
 // @match        *://www.coursera.org/*
@@ -13,8 +13,19 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_download
 // @grant        GM_notification
+// @run-at       document-end
 // ==/UserScript==
 (function () {
+  /**
+   * This is the first time I wrote a Greasemonkey script. 
+   * There is definitely a better way to do this.
+   * Feel free to optimize this plugin.
+   * 
+   * Special thanks to the author of lynda-translate, this script is written 
+   * on the base of lynda-translate script. Peace and love @journey-ad
+   * 
+   * The github address of the original author is https://github.com/journey-ad
+   */
   "use strict";
   var transServer = "caiyun";
 
@@ -27,7 +38,7 @@
     console.log("INTERVAL RECORDED!");
     if (!executed) {
       executed = 1;
-      await sleep(15000);
+      // await sleep(15000);
       console.log("STARTING EXECUTING CONTENT");
       // 开启双语字幕
       let tracks = document.getElementsByTagName('track')
