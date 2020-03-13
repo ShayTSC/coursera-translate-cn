@@ -3,94 +3,178 @@
 // @description  coursera.com 字幕翻译脚本，并支持下载视频和字幕文件
 // @namespace    https://github.com/coursera-translate-cn
 // @version      0.0.1
-// @icon         https://cdn.coursera.com/static/favicon.ico
-// @author       DrMerxer
+// @icon         https://simpleicons.org/icons/coursera.svg
+// @author       DrMerxer, carpho, journey-ad
 // @match        *://www.coursera.org/*
 // @require      https://cdn.jsdelivr.net/npm/downloadjs@1.4.7/download.min.js
 // @require      https://cdn.jsdelivr.net/npm/fingerprintjs2@2.1.0/fingerprint2.min.js
-// @license      MIT
+// @license      GPLv3
 // @run-at       document-end
 // @grant        GM_xmlhttpRequest
-// @grant        GM_download
-// @grant        GM_notification
 // @run-at       document-end
 // ==/UserScript==
 (function () {
-  /**
-   * This is the first time I wrote a Greasemonkey script. 
-   * There is definitely a better way to do this.
-   * Feel free to optimize this plugin.
-   * 
-   * Special thanks to the author of lynda-translate, this script is written 
-   * on the base of lynda-translate script. Peace and love @journey-ad
-   * 
-   * The github address of the original author is https://github.com/journey-ad
-   */
+
   "use strict";
-  var transServer = "caiyun";
+
+  const contentStyle = `
+    text-align:center;
+    color: white;
+    font-size: 18px;
+    line-height: 25px;
+    padding: 12px;
+    background: #757575; 
+    width: 100%; 
+    height: 35%;
+  `;
+
+  var transServer = "google";
 
   before();
-  var entries = null;
-  var executed = 0;
-  window.transTimer = window.setInterval(init, 100);
+  var cues = null;
+  formatSub();
+  window.transTimer = window.setInterval(init, 10000); // 用定时器检查待翻译文本是否已准备好
 
   async function init() {
-    console.log("INTERVAL RECORDED!");
-    if (!executed) {
-      executed = 1;
-      // await sleep(15000);
-      console.log("STARTING EXECUTING CONTENT");
-      // 开启双语字幕
-      let tracks = document.getElementsByTagName('track')
-      let en
-      let zhcn
-      if (tracks.length) {
-        // 1. 遍历字幕节点，找到中英文字幕
-        for (let i = 0; i < tracks.length; i++) {
-          if (tracks[i].srclang === 'en') {
-            en = tracks[i]
-          } else if (tracks[i].srclang === 'zh-CN') {
-            zhcn = tracks[i]
-          }
+    await sleep(3000);
+    // 开启双语字幕
+    let tracks = document.getElementsByTagName('track')
+    let en
+    let zhcn
+    if (tracks.length) {
+      for (let i = 0; i < tracks.length; i++) {
+        if (tracks[i].srclang === 'en') {
+          en = tracks[i]
+        } else if (tracks[i].srclang === 'zh-CN') {
+          zhcn = tracks[i]
         }
-        // 2. 如果英文字幕存在，打开
-        if (en) {
-          en.track.mode = 'showing'
-          // 3. 判定中文字幕是否存在, 如果存在，直接打开
-          if (zhcn) {
-            zhcn.track.mode = 'showing'
-          } else {
-            // 4. 如果不存在，开启翻译
-            // Chrome 更新到 74 以后
-            // 似乎首次设置 track.mode = 'showing' 到 cues 加载完毕之间有延迟？
-            // 暂时先用 sleep 让 cues 有充足的时间加载字幕以确保正常工作，稍后再来解决
-            await sleep(500)
-            let cues = en.track.cues
-            // 由于逐句翻译会大量请求翻译 API，需要减少请求次数
-            const cuesTextList = getCuesTextList(cues)
-            // 进行翻译
-            for (let i = 0; i < cuesTextList.length; i++) {
-              getTranslation(
-                transServer,
-                {
-                  text: cuesTextList[i][1].trim(),
-                  index: i
-                }, function (translatedText, index) {
-                  // 取得返回的文本，根据之前插入的换行符 split
-                  // 然后确定所在 cues 文本的序列，为之前存储的起始位置 + 目前的相对位置
-                  // 把翻译后的文本直接添加到英文字幕后面
-                  console.log('Println: ' + translatedText)
-                  //console.log(cues[cuesTextList[i][0] + j])
-                  const translatedTextList = translatedText.split('\n\n')
-                  for (let j = 0; j < translatedTextList.length; j++) {
-                    cues[cuesTextList[i][0] + j].text += translatedTextList[j]
-                  }
-                })
-            }
+      }
+      // 判定中文字幕是否存在, 如果存在，直接打开
+      if (en) {
+        let trackNode = en.track;
+        trackNode.mode = 'hidden';
+
+        if (zhcn) {
+          let trackNode = zhcn.track;
+          trackNode.mode = 'hidden';
+          window.clearInterval(window.transTimer)
+          trackNode.onload = showCue(trackNode);
+
+        } else {
+          console.log("字幕文本可用")
+          // sleep(500).then(() => {
+          //用 sleep 让 cues 有充足的时间加载字幕以确保正常工作
+          await sleep(500);
+
+          let cues = trackNode.cues
+          if (cues) {
+            console.log("已经取到cues")
+            window.clearInterval(window.transTimer)
           }
+          // console.log(cues)
+          for (let i = 0; i < cues.length; i++) {
+            cues[i].text = formatText(cues[i].text)
+          }
+
+          const cuesTextList = getCuesTextList(cues)
+
+          // console.log(cuesTextList)
+          // let transText = getTransText (cuesTextList)
+
+          window.subtitleTrans = []
+          var s = cuesTextList[0][1],
+            r = "",
+            arr = [],
+            num = 0,
+            count = 0;
+          // subtitle.forEach(function (e) {
+          //     // 去除每条字幕的换行符并按行排列
+          //     s += e.replace(/\r?\n|\r/g, " ") + "\n";
+          // })
+          console.log(s)
+          num = translate(s, function (data, index) {
+            // 调用翻译方法并处理回调
+            count++
+            arr[index] = data // 按分块原始下标放回结果数组
+
+            if (count >= num) {
+              // 所有翻译文本已取回
+              r = arr.join("\n")
+              window.subtitleTrans = r.split("\n")
+              // console.log(window.subtitleTrans)
+              let transText = window.subtitleTrans
+
+              console.log("使用 " + transServer + " 翻译完成");
+
+              for (let j, i = j = 0; j < transText.length; j++) {
+                cues[cuesTextList[i][0] + j].text += "<br />" + "\n" + formatText(transText[j])
+              }
+            }
+          })
+
+          trackNode.onload = showCue(trackNode);
+          // })
         }
       }
     }
+  }
+
+  function formatSub() {
+    var css = 'video::cue {font-size: medium; white-space: pre;}',
+      head = document.head || document.getElementsByTagName('head')[0],
+      style = document.createElement('style');
+
+    style.type = 'text/css';
+    if (style.styleSheet) {
+      style.styleSheet.cssText = css;
+    } else {
+      style.appendChild(document.createTextNode(css));
+    }
+    head.appendChild(style);
+  }
+
+  function showCue(trackNode) {
+    let panel = document.querySelector(".rc-VideoToolbar.horizontal-box.align-items-spacebetween");
+    // var css = 'sub_div {background: #757575; width: 100%; padding-bottom: 100%;}'
+
+    panel.style.justifyContent = "flex-start";
+    const content = document.createElement("div");
+    content.innerHTML = "正在翻译字幕…";
+    content.style.cssText = contentStyle;
+    panel.innerHTML = "";
+    panel.append(content);
+
+    console.log("开始抓取字幕")
+
+    // addSubPanel(panel);
+    // console.log(content)
+
+    //track节点对象有ready状态码 0=NONE 1=LOADING 2=LOADED 3=ERROR
+    //chrome下是2,ie下'complete'
+    // console.log("进入showCue")
+    // if (trackNode.readyState == 2 || trackNode.readyState == 'complete') {
+    //通过track节点对象的cuechange事件，实现同步
+    trackNode.addEventListener('cuechange', function () {
+
+      // 通过track节点对象的track属性 获得文本轨道对象
+      // var track = this.track;
+      // 通过文本轨道对象获得当前激活的字幕对象
+      // console.log(track);
+      var activecue = trackNode.activeCues;
+      // console.log(activecue);
+      // panel.innerHTML = "";
+      // var content = document.getElementById('content').textContent;
+      // const content = document.createElement("div");
+      if (activecue.length > 0) {
+        content.innerHTML = "";
+        for (var i = 0; i < activecue.length; i++) {
+          //在oText节点里显示所有激活的字幕文本
+          content.innerHTML += activecue[i].text;
+          // console.log(activecue[i].text);
+        }
+      }
+    }, false);
+    // }
   }
 
   function sleep(ms) {
@@ -104,26 +188,67 @@
     // 返回的数据结构大概是 [[0, 文本], [95, 文本]]
     let cuesTextList = []
     for (let i = 0; i < cues.length; i++) {
-      if (cuesTextList.length && cuesTextList[cuesTextList.length - 1][1].length + cues[i].text.length < 5000) {
+      if (cuesTextList.length) {
         // 需要插入一个分隔符(换行)，以便之后为翻译完的字符串 split
         // 用两个换行符来分割，因为有的视频字幕是自带换行符
-        cuesTextList[cuesTextList.length - 1][1] += '\n\n' + transText(cues[i].text)
+        cuesTextList[cuesTextList.length - 1][1] += "\n" + formatText(cues[i].text)
       } else {
-        cuesTextList.push([i, transText(cues[i].text)])
+        cuesTextList.push([i, formatText(cues[i].text)])
       }
     }
     return cuesTextList
   }
 
-  function transText(str) {
-    var s = str.replace(/\r?\n|\r/g, " ") + "\n"
+  function formatText(str) {
+    var s = str.replace(/\r?\n|\r/g, " ", "  ", "\n");
     return s;
   }
 
-  function getTranslation(method, r, callback) {
-    switch (method) {
-      case 'sogou':
+  function translate(str, callback) {
+    var textArr = [],
+      count = 1;
+
+    if (str.length > 5000) {
+      //大于5000字符分块翻译
+      var strArr = str.split("\n"),
+        i = 0;
+      strArr.forEach(function (v) {
+        textArr[i] = textArr[i] || "";
+
+        if ((textArr[i] + v).length > (i + 1) * 5000) {
+          // 若加上此行后长度超出5000字符则分块
+          i++;
+          textArr[i] = "";
+        }
+
+        textArr[i] += v + "\n";
+      });
+      count = i + 1; // 记录块的数量
+    } else {
+      textArr[0] = str;
+    }
+
+    textArr.forEach(function (text, index) {
+      // 遍历每块分别进行翻译
+      server({
+        text: text.trim(),
+        index: index
+      }, callback);
+    });
+    return count; // 返回分块数量
+  }
+
+  function serialize(obj) {
+    return Object.keys(obj).map(function (k) {
+      return encodeURIComponent(k) + "=" + encodeURIComponent(obj[k]).replace("%20", "+");
+    }).join("&");
+  }
+
+  function server() {
+    var list = {
+      sogou: function sogou(r, callback) {
         var KEY = "b33bf8c58706155663d1ad5dba4192dc"; // 硬编码于搜狗网页翻译js
+
         var data = {
           "from": "auto",
           "to": "zh-CHS",
@@ -152,9 +277,8 @@
             callback(result.data.translate.dit, r.index); // 执行回调，在回调中拼接
           }
         });
-        break;
-      case 'caiyun':
-        console.log("FETCHING TRANSLATION")
+      },
+      caiyun: function caiyun(r, callback) {
         var data = {
           "source": r.text.split("\n"),
           "trans_type": "en2zh",
@@ -214,8 +338,8 @@
             callback(encodeArr.join("\n"), r.index); // 执行回调，在回调中拼接
           }
         });
-        break;
-      case 'google':
+      },
+      google: function google(r, callback) {
         var data = {
           "q": r.text,
           "client": "webapp",
@@ -247,10 +371,9 @@
             callback(arr.join(""), r.index); // 执行回调，在回调中拼接
           }
         });
-        break;
-      default:
-        break;
-    }
+      }
+    };
+    return list[transServer].apply(null, arguments);
   }
 
   function before() {
@@ -282,12 +405,6 @@
         });
       });
     }
-  }
-
-  function serialize(obj) {
-    return Object.keys(obj).map(function (k) {
-      return encodeURIComponent(k) + "=" + encodeURIComponent(obj[k]).replace("%20", "+");
-    }).join("&");
   }
 
   function md5(str) {
@@ -391,6 +508,5 @@
     a %= 1E6;
     return a.toString() + "." + (a ^ b);
   }
-
 
 })();
